@@ -1,8 +1,9 @@
-# Lekcja 3: Frontend Testing
+﻿# Lekcja 3: Frontend Testing
 
 To jest ważne, bo w raporcie ta część jest podpisana przez Ciebie, więc egzaminator może naturalnie pójść w pytania typu: “what exactly did you test and why?”.
 
-**1. Po co testowaliście frontend?**
+## 1. Po co testowaliście frontend?
+
 Nie testujesz Reacta. React już działa.  
 Testujesz, czy **wasza aplikacja** zachowuje się poprawnie.
 
@@ -20,50 +21,58 @@ Dobra odpowiedź:
 
 > The goal of frontend testing was to verify the user-facing behavior and the API contract. We did not test React itself, but our own access-control logic, UI components, API calls, error handling, and important browser flows.
 
-**2. Mieliście 3 poziomy testów**
-Z raportu:
+## 2. Narzędzia z kodu
+
+W `System/FrontEnd/package.json` są:
 
 ```text
-Unit tests
-Component tests
-Black-box / browser tests
+npm run test:run       -> vitest run
+npm run test:e2e       -> playwright test
+npm run build          -> vite build
 ```
 
-Plus osobno: API service tests.
-
-Czyli praktycznie:
+Zależności potwierdzają:
 
 ```text
 Vitest
 React Testing Library
-fetch mocks / API tests
+@testing-library/user-event
 Playwright
+Vite
+ESLint
 ```
 
-**3. Unit tests**
+Czyli raport nie wymyśla narzędzi, one faktycznie są w projekcie.
+
+## 3. Unit tests
+
 Unit testy sprawdzają małą logikę bez UI.
 
-U was: **access-control logic**.
+W kodzie: `System/FrontEnd/src/auth/accessControl.test.js`.
 
-Czyli np.:
+Testy sprawdzają m.in.:
 
-- unknown role fallbackuje do resident,
-- aliasy ról mapują się poprawnie,
-- resident i admin mają inne permissions,
-- default dashboard view jest wybrany z dozwolonych widoków.
+- unknown role fallbackuje do `resident`,
+- alias `building-admin` mapuje się na `building-administrator`,
+- alias `system-admin` mapuje się na `admin`,
+- resident ma ograniczone permissions,
+- admin może widzieć więcej,
+- default view to `Home`,
+- demo session tworzy poprawną rolę.
 
-Po co?
-
-Bo role-based access to potencjalnie ryzykowna część. Jak to się zepsuje, user może zobaczyć widoki, których nie powinien.
-
-Odpowiedź:
+Dobra odpowiedź:
 
 > Unit tests were used for pure access-control logic, because this logic does not need a browser or React rendering. We tested role mapping, permission differences, fallback behavior, and default view selection.
 
-**4. Component tests**
+Uczciwy detal:
+
+> This helper also reflects some prototype role-selection logic, while the main App.jsx uses backend login and the returned user role for the real session.
+
+## 4. Component tests
+
 Component tests sprawdzają pojedyncze komponenty UI.
 
-U was były testowane m.in.:
+W kodzie są testy m.in. dla:
 
 - `LoginPage`,
 - `LoginRoleSelect`,
@@ -71,77 +80,85 @@ U was były testowane m.in.:
 - `RestrictedNotice`,
 - `AdminControls`.
 
-Czyli:
+Najbardziej konkretne: `AdminControls.test.jsx` sprawdza, że:
 
-- czy formularz logowania ma username/password/submit,
-- czy role są widoczne i wybieralne,
-- czy logout odpala callback,
-- czy restricted notice pokazuje komunikat,
-- czy alarm buttons są disabled kiedy trzeba,
-- czy kliknięcie alarmu wywołuje dobry handler: `critical`, `warn`, `off`.
-
-Po co?
-
-Bo te komponenty mają zachowanie, nie tylko wygląd.
+- alarm buttons są disabled, gdy wybrane są `all` devices,
+- buttons są disabled, gdy request jest busy,
+- kliknięcia wywołują handler z `critical`, `warn`, `off`,
+- error message z alarm testu jest renderowany jako danger.
 
 Dobra odpowiedź:
 
 > Component tests verified isolated UI behavior. For example, the login form renders the expected controls, the user menu calls logout, restricted views show an access-denied message, and alarm controls call the correct handler with the correct alarm mode.
 
-**5. API service tests**
+## 5. API service tests
+
 To bardzo dobry temat na egzamin, bo brzmi konkretnie.
 
-Frontend gada z backendem przez `api.js`.  
-Najczęstsze bugi są właśnie tam:
+W kodzie: `System/FrontEnd/src/services/api.test.js`.
 
-- zły URL,
-- zła metoda HTTP,
-- brak `Authorization` header,
-- złe JSON body,
-- złe error message,
-- źle zbudowany stream URL.
+Testy mockują `fetch` i sprawdzają:
 
-Więc testowaliście requesty mockując `fetch`.
+- `GET /api/readings?sensorId=101&limit=25&hours=2`,
+- `Authorization: Bearer test-token`,
+- pomijanie `sensorId`, gdy wybrane jest `all`,
+- błędy typu `Readings request failed (500)`,
+- `/api/readings/devices`,
+- `/api/readings/alerts`,
+- `POST /api/readings/alarm-test`,
+- `EventSource /api/readings/stream?sensorId=101&token=...`,
+- `/api/room` i przypisywanie sensorów do pokoi,
+- `/api/users`, role changes, assign sensor to user, delete user,
+- `/api/logs`,
+- login/register i fallback error messages.
 
 Dobra odpowiedź:
 
-> API service tests mocked fetch and verified that the frontend sends the correct URLs, HTTP methods, authorization headers, request bodies, and handles errors correctly. This was important because many frontend bugs in our project would happen at the backend/frontend boundary.
+> API service tests mocked fetch and verified that the frontend sends the correct URLs, HTTP methods, authorization headers, request bodies, stream URLs, and handles errors correctly. This was important because many frontend bugs in our project would happen at the backend/frontend boundary.
 
 To zdanie jest złoto. Zapamiętaj.
 
-**6. Playwright tests**
+## 6. Playwright tests
+
 Playwright to testy w prawdziwej przeglądarce.
 
-To nie sprawdza jednego komponentu, tylko user flow:
+W kodzie: `System/FrontEnd/e2e/frontend-blackbox.spec.js`.
 
-- login,
-- dashboard loads,
-- role-based access,
-- backend offline screen,
-- responsive layout,
-- desktop + mobile viewport.
+Są 3 scenariusze:
 
-Po co Playwright, skoro są unit/component tests?
+1. Po sign in dashboard renderuje dane.
+2. Gdy readings API zwraca błąd, pokazuje się `Dashboard offline`.
+3. Dashboard zostaje usable na responsive viewport i nie robi horizontal overflow.
 
-Bo unit test nie powie Ci, czy cała aplikacja działa razem w przeglądarce.
+W `playwright.config.js` te 3 scenariusze lecą na dwóch projektach:
+
+```text
+chromium-desktop: 1440x900
+chromium-mobile: Pixel 5
+```
+
+Dlatego w raporcie wychodzi 6 browser tests.
 
 Dobra odpowiedź:
 
-> Playwright tests checked the application from the user’s point of view in a real browser. This gives confidence that routing, rendering, mocked backend responses, role-based navigation, and responsive layout work together, not only as isolated functions.
+> Playwright tests checked the application from the user’s point of view in a real browser. This gives confidence that routing, rendering, mocked backend responses, role-based navigation, error handling, and responsive layout work together, not only as isolated functions.
 
-**7. Responsive testing**
-W raporcie jest ważny konkret:
+## 7. Responsive testing
 
-- desktop Chromium,
-- Pixel 5 mobile viewport,
-- test sprawdza, czy dashboard/navigation są widoczne,
-- brak horizontal overflow.
+W kodzie responsive test sprawdza:
 
-Czyli jeśli pytają o mobile:
+```js
+document.documentElement.scrollWidth <= window.innerWidth + 1
+```
+
+Czyli konkretnie: nie ma poziomego overflow.
+
+Dobra odpowiedź:
 
 > We tested responsive behavior with Playwright using desktop and Pixel 5 mobile viewports. The goal was to verify that the main dashboard and navigation remain usable and that the page does not create horizontal overflow.
 
-**8. Wyniki**
+## 8. Wyniki
+
 Z raportu:
 
 ```text
@@ -151,30 +168,30 @@ npm run build passed
 Latest local verification: 2026-05-26
 ```
 
-Nie musisz tego recytować perfekcyjnie, ale warto znać liczby.
+Z kodu wynika, skąd to się bierze:
 
-**9. Limitations**
+- Vitest zbiera unit/component/API tests,
+- Playwright ma 3 scenariusze x 2 projekty,
+- build to `vite build`.
+
+## 9. Limitations
+
 Nie udawaj, że testy były idealne. Egzaminator lubi uczciwość.
 
 Limitacje:
 
-- nie każdy visual case był automatyzowany,
-- chart readability głównie manualnie,
-- live backend data nie było w pełni testowane end-to-end,
-- abnormal alarm states częściowo mockowane/manualne,
-- brak pełnego e2e z realnym backendem/IoT/ML.
+- Playwright mockuje backend, więc to nie jest pełny end-to-end z realnym backendem, IoT i ML,
+- live SSE jest raczej sprawdzane jako URL/flow, nie jako prawdziwy live stream z produkcji,
+- chart readability i część visual checks były manualne,
+- abnormal alarm states były częściowo mockowane/manualne,
+- testy nie pokrywają każdego możliwego widoku dashboardu.
 
 Dobra odpowiedź:
 
 > The main limitation is that not every visual and live-data scenario was automated. Some chart readability, live backend data, and abnormal alarm states were checked manually or with mocked data instead of a full end-to-end setup with real IoT, backend, and ML services.
 
-**Najlepsza odpowiedź egzaminacyjna**
-Pytanie:
+## Najlepsza odpowiedź egzaminacyjna
 
-> How did you test the frontend?
-
-Odpowiedź:
-
-> We tested the frontend on several levels. Unit tests with Vitest covered access-control logic, such as role mapping, permissions, fallback roles, and default views. Component tests with React Testing Library checked isolated UI behavior, for example login, role selection, user menu logout, restricted notices, and alarm controls. API service tests mocked fetch to verify correct endpoints, HTTP methods, authorization headers, request bodies, and error handling. Finally, Playwright black-box tests checked important user flows in a real browser, including login, dashboard display, backend-offline behavior, role-based access, and responsive layout on desktop and mobile.
+> We tested the frontend on several levels. Unit tests with Vitest covered access-control logic, such as role mapping, permissions, fallback roles, and default views. Component tests with React Testing Library checked isolated UI behavior, for example login, role selection, user menu logout, restricted notices, and alarm controls. API service tests mocked fetch to verify correct endpoints, HTTP methods, authorization headers, request bodies, stream URLs, and error handling. Finally, Playwright black-box tests checked important user flows in a real browser, including login, dashboard display, backend-offline behavior, and responsive layout on desktop and Pixel 5 mobile viewport.
 
 To jest Twoja bazowa odpowiedź. Jak ją powiesz spokojnie, brzmisz jak ktoś, kto realnie wie, po co te testy były.
